@@ -8,7 +8,7 @@
       "title": "Артефакт агента",
       "type": "string",
       "description": "JSON или произвольный текст — то, что агент собирается отдать в контекст другому агенту.",
-      "editor": "string"
+      "editor": "textarea"
     },
     "schema": {
       "title": "JSON-схема (необязательно)",
@@ -19,7 +19,8 @@
       "title": "Источник",
       "type": "string",
       "default": "apify",
-      "description": "Кто прислал артефакт — попадает в заверяние."
+      "description": "Кто прислал артефакт — попадает в заверяние.",
+      "editor": "textfield"
     }
   },
   "required": [

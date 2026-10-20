@@ -8,7 +8,8 @@
       "title": "Артефакт агента",
       "type": "string",
       "description": "JSON или произвольный текст — то, что агент собирается отдать в контекст другому агенту.",
-      "editor": "textarea"
+      "editor": "textarea",
+      "prefill": "{\"result\": 42, \"source\": \"demo-agent\"}"
     },
     "schema": {
       "title": "JSON-схема (необязательно)",
@@ -21,7 +22,8 @@
       "type": "string",
       "default": "apify",
       "description": "Кто прислал артефакт — попадает в заверяние.",
-      "editor": "textfield"
+      "editor": "textfield",
+      "prefill": "apify-demo"
     }
   },
   "required": [

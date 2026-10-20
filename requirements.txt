@@ -1,2 +1,1 @@
 mcp>=2.0
-skilllint @ git+https://github.com/mrpkk/skilllint

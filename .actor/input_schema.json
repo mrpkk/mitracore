@@ -1,0 +1,28 @@
+{
+  "title": "mitracore input",
+  "description": "Артефакт, произведённый AI-агентом, и — по желанию — JSON-схема. На выходе: вердикт проверки (accept/review/reject), доверительный балл, нарушения, сигналы и подпись Ed25519, проверяемая офлайн.",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "artifact": {
+      "title": "Артефакт агента",
+      "type": "string",
+      "description": "JSON или произвольный текст — то, что агент собирается отдать в контекст другому агенту.",
+      "editor": "string"
+    },
+    "schema": {
+      "title": "JSON-схема (необязательно)",
+      "type": "object",
+      "description": "Схема, по которой проверяется структура артефакта."
+    },
+    "source": {
+      "title": "Источник",
+      "type": "string",
+      "default": "apify",
+      "description": "Кто прислал артефакт — попадает в заверяние."
+    }
+  },
+  "required": [
+    "artifact"
+  ]
+}

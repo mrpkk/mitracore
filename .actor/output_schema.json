@@ -1,0 +1,69 @@
+{
+  "actorOutputSchemaVersion": 1,
+  "title": "mitracore verification result",
+  "description": "Вердикт проверки артефакта агента с подписью.",
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "accept",
+        "review",
+        "reject"
+      ],
+      "description": "accept — можно вставлять в контекст; review — есть находки; reject — не пускать."
+    },
+    "trust_score": {
+      "type": "number",
+      "description": "Доверительный балл 0–100."
+    },
+    "content_hash": {
+      "type": "string",
+      "description": "sha256 содержимого артефакта."
+    },
+    "violations": {
+      "type": "array",
+      "description": "Нарушения: схема, пустота, provenance, полномочия.",
+      "items": {
+        "type": "object"
+      }
+    },
+    "signals": {
+      "type": "array",
+      "description": "Сигналы отравления контекста и подозрительных конструкций.",
+      "items": {
+        "type": "object"
+      }
+    },
+    "reason": {
+      "type": "string",
+      "description": "Человекочитаемое объяснение вердикта."
+    },
+    "attestation": {
+      "type": "object",
+      "description": "Подпись Ed25519: проверяется офлайн, публичный ключ едет вместе с подписью.",
+      "properties": {
+        "algorithm": {
+          "type": "string"
+        },
+        "signature": {
+          "type": "string"
+        },
+        "public_key": {
+          "type": "string"
+        }
+      }
+    },
+    "source": {
+      "type": "string",
+      "description": "Источник артефакта."
+    },
+    "checked_at": {
+      "type": "string",
+      "description": "Время проверки (UTC)."
+    },
+    "error": {
+      "type": "string",
+      "description": "Заполняется, если действие не выполнено."
+    }
+  }
+}

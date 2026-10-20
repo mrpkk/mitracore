@@ -1,0 +1,253 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "mitracore",
+    "version": "1.0.0",
+    "summary": "Trust layer for agent work: verify the artifact, meter what it cost, enforce the mandate.",
+    "description": "One endpoint in front of three services you can also use separately: artifact verification (schema, emptiness, provenance, authority), per-call cost metering from published rates, and mandate enforcement (limits, allowlist, kill switch). Receipts are signed and verifiable offline.",
+    "license": "MIT",
+    "contact": {
+      "name": "mrpkk",
+      "url": "https://rta.lat/mitracore"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://rta.lat/mitracore",
+      "description": "Hosted"
+    }
+  ],
+  "paths": {
+    "/v1/verify": {
+      "post": {
+        "summary": "Verify an agent artifact",
+        "description": "Four layers: schema conformance, emptiness (uniform lists, stub values, truncations), generation provenance, authority (was the action permitted).",
+        "x-price": "0.005 USDC per call; 20 calls/day free; 9 USDC / 30 days prepaid",
+        "requestBody": {
+          "required": [
+            "artifact"
+          ],
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "artifact"
+                ],
+                "properties": {
+                  "artifact": {
+                    "type": "object",
+                    "description": "The produced artifact (any JSON)."
+                  },
+                  "schema": {
+                    "type": "object",
+                    "description": "Optional expected schema."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Verdict with trust score, violations and a signed receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "verdict": {
+                      "type": "string",
+                      "enum": [
+                        "accept",
+                        "reject",
+                        "review"
+                      ]
+                    },
+                    "trust_score": {
+                      "type": "number"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "violations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "attestation": {
+                      "type": "object",
+                      "description": "Signed receipt (Ed25519), verifiable offline."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required (x402). Free tier applies below the limit."
+          }
+        }
+      }
+    },
+    "/v1/quote": {
+      "post": {
+        "summary": "Price what a call actually consumed",
+        "description": "Send the components the call really used; the price is computed from a published rate card with the breakdown attached.",
+        "x-price": "free",
+        "requestBody": {
+          "required": [],
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "tokens": {
+                    "type": "number"
+                  },
+                  "cpu_seconds": {
+                    "type": "number"
+                  },
+                  "bytes_out": {
+                    "type": "number"
+                  },
+                  "storage_writes": {
+                    "type": "number"
+                  },
+                  "external_calls": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cost breakdown with total.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/trust-report": {
+      "post": {
+        "summary": "Combined verdict: verification + cost + mandate availability",
+        "requestBody": {
+          "required": [
+            "artifact"
+          ],
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "artifact"
+                ],
+                "properties": {
+                  "artifact": {
+                    "type": "object"
+                  },
+                  "schema": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "artifact_verdict, cost_quote, mandates_available.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/skills/lint": {
+      "post": {
+        "summary": "Lint an agent skill (SKILL.md) without sending it anywhere",
+        "description": "Private by construction: structure, trigger, dead instructions, secret-shaped literals, prompt-injection markers, broken references, unbounded autonomy. Returns verdict, score and sha256 so the result can be signed.",
+        "x-price": "free",
+        "requestBody": {
+          "required": [
+            "path"
+          ],
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "path"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "verdict, score, sha256, findings[]",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Live state of every layer",
+        "responses": {
+          "200": {
+            "description": "attest/agentpay/drift/skilllint status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "x-mcp": {
+    "transport": "stdio + streamable-http",
+    "tools": [
+      "verify_work",
+      "check_skill",
+      "quote_cost",
+      "trust_report",
+      "suite_status"
+    ],
+    "locales": [
+      "en",
+      "hi"
+    ],
+    "notes": "Hindi (hi) is a first-class interface locale, not an afterthought. India (Bharata) is priced, documented and launched for from day one. Legal references for India are sourced only from official repositories (India Code, courts, ministries); anything unverified is reported as pending."
+  }
+}

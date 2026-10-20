@@ -1,0 +1,41 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "io.github.mrpkk/mitracore",
+  "description": "Trust layer for agent work: verify the artifact, meter what it cost, and keep the mandate.",
+  "version": "1.0.0",
+  "status": "active",
+  "repository": {
+    "url": "https://github.com/mrpkk/mitracore",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "mitracore",
+      "version": "1.0.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "ATTEST_URL",
+          "description": "attest service base URL",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "AGENTPAY_URL",
+          "description": "agentpay service base URL",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://rta.lat/mitracore/mcp"
+    }
+  ]
+}

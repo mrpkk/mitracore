@@ -1,0 +1,15 @@
+[project]
+name = "mitracore"
+version = "1.0.0"
+description = "Trust layer for agent work: verify the artifact, meter what it cost, enforce the mandate."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+dependencies = ["mcp>=2.0", "skilllint @ git+https://github.com/mrpkk/skilllint"]
+
+[project.scripts]
+mitracore-mcp = "mcp_server:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

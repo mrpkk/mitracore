@@ -1,0 +1,49 @@
+# mitracore
+
+> Trust layer for agent work: verify the artifact, meter what it cost, enforce the mandate.
+
+One HTTP call (or one MCP tool) instead of three separate services:
+
+- **verify** — four layers over an agent artifact: schema conformance, emptiness (uniform lists, stub values, truncations), generation provenance, authority (was the action permitted at all). Ed25519-signed receipt, verifiable offline, no trust in this service required.
+- **quote** — price what the call actually consumed (tokens, CPU seconds, bytes out, storage writes, external calls) from a published rate card, with the breakdown attached.
+- **mandates** — limits, allowlist and kill switch for what an agent is allowed to do.
+
+## Endpoints
+
+- `POST /v1/verify` — verdict, trust score, violations, signed receipt. **20 calls/day free**, then 0.005 USDC per call, or 9 USDC for 30 days prepaid, or 49 USD per environment per month.
+- `POST /v1/quote` — cost breakdown for an actual call. Free.
+- `POST /v1/trust-report` — verification + cost + mandate availability in one answer.
+- `POST /v1/skills/lint` — private lint of a SKILL.md (nothing leaves the machine): verdict, score, sha256 ready to be signed.
+- `GET /health` — live state of every layer.
+
+## MCP
+
+- `verify_work(artifact, schema?)`
+- `check_skill(path)`
+- `quote_cost(tokens, cpu_seconds, bytes_out, storage_writes, external_calls)`
+- `trust_report(artifact, schema?)`
+- `suite_status()`
+
+stdio: `python3 mcp_server.py` · streamable-http: `python3 mcp_server.py --http 8192`
+
+## Why it exists
+
+Two out of three agent projects get cancelled (Gartner: 40% by end of 2027) — not for lack of capability, but for unclear business value and weak risk control. In the same year only 7% of developers said they trust AI output for important decisions, and only 26% of organisations see their AI costs in real time. Those are three separate risks, and they are what this service exists to close:
+
+1. the work was reported as done but is empty or unprovable → **verify**;
+2. nobody knows what a run actually cost → **quote**;
+3. the agent could do what it was not allowed to do → **mandates**.
+
+## Trust
+
+Receipts are signed with Ed25519. The key fingerprint is published: a buyer can verify any completion locally, without trusting this service and without an account.
+
+## Pricing
+
+- 20 verifications per day, free, no card, no account
+- 0.005 USDC per verification (x402), or 9 USDC / 30 days prepaid
+- 49 USD per environment per month (prepaid, no auto-renewal)
+
+Locales: `en`, `hi` (Hindi is a first-class interface, not a translation afterthought). India (Bharata) is included in pricing, docs and launch from day one; legal references for India come only from official repositories, and anything unverified is reported as pending.
+
+Links: https://rta.lat/mitracore · MCP server card: `.well-known/mcp/server-card.json`

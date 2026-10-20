@@ -1,0 +1,82 @@
+{
+  "actorSpecification": 1,
+  "title": "mitracore — результат проверки",
+  "fields": {
+    "type": "object",
+    "properties": {
+      "verdict": {
+        "type": "string",
+        "enum": [
+          "accept",
+          "review",
+          "reject"
+        ],
+        "description": "Вердикт проверки."
+      },
+      "trust_score": {
+        "type": "number",
+        "description": "Доверительный балл 0–100."
+      },
+      "content_hash": {
+        "type": "string",
+        "description": "sha256 содержимого артефакта."
+      },
+      "violations": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        }
+      },
+      "signals": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        }
+      },
+      "reason": {
+        "type": "string"
+      },
+      "attestation": {
+        "type": "object",
+        "properties": {
+          "algorithm": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          },
+          "public_key": {
+            "type": "string"
+          }
+        }
+      },
+      "source": {
+        "type": "string"
+      },
+      "checked_at": {
+        "type": "string"
+      },
+      "error": {
+        "type": "string"
+      }
+    }
+  },
+  "views": {
+    "overview": {
+      "title": "Обзор",
+      "transformation": {
+        "fields": [
+          "verdict",
+          "trust_score",
+          "content_hash",
+          "violations",
+          "signals",
+          "reason"
+        ]
+      },
+      "display": {
+        "component": "table"
+      }
+    }
+  }
+}

@@ -117,7 +117,12 @@ def run_action(inp: dict) -> dict:
 
     payload: dict = {"artifact": art, "source": inp.get("source") or "apify"}
     schema = inp.get("schema")
-    if schema:
+    if isinstance(schema, str) and schema.strip():
+        try:
+            payload["schema"] = json.loads(schema)
+        except Exception as e:
+            raise ValueError(f"поле schema не является JSON: {e}") from e
+    elif isinstance(schema, dict) and schema:
         payload["schema"] = schema
 
     res = _post_verify(payload)

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "lat.rta/mitracore",
+  "title": "mitracore — trust layer for agent work",
+  "description": "Verify the artifact, meter the cost, enforce the mandate — one call.",
+  "repository": {
+    "url": "https://github.com/mrpkk/mitracore",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://rta.lat/mitracore/mcp"
+    }
+  ]
+}

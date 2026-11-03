@@ -30,6 +30,7 @@ except ImportError:  # pragma: no cover
     sys.path.insert(0, os.path.join(HERE, "..", "skilllint"))
 
 from mcp.server.mcpserver import MCPServer  # noqa: E402
+import x402_gate  # noqa: E402  (цена и 402 после бесплатного лимита)
 
 mcp = MCPServer("mitracore", version="1.0.0")
 
@@ -213,12 +214,57 @@ def main() -> None:
         _prefix = args.http_path.rsplit("/", 1)[0]
         for _p in ("/.well-known/mcp/server-card.json", _prefix + "/.well-known/mcp/server-card.json"):
             app.router.routes.insert(0, Route(_p, _server_card))
+        # ── цена и оплата ───────────────────────────────────────────────
+        # Бесплатный лимит в день, дальше 402 по x402. Адрес страницы цены
+        # уходит в server.json (websiteUrl): без него каталоги не показывают
+        # цену вовсе — они читают её с сайта, а не из нашего ответа.
+        gate_cfg = x402_gate.config("mitracore", f"https://rta.lat{args.http_path}")
+        if gate_cfg is not None:
+            from starlette.requests import Request
+
+            async def _pricing(request):
+                return JSONResponse(
+                    {"service": "mitracore", "price_usd": gate_cfg.price_usd,
+                     "free_per_day": gate_cfg.free_per_day,
+                     "subscription_usd": gate_cfg.sub_price_usd,
+                     "subscription_period_days": 30,
+                     "network": gate_cfg.network, "pay_to": gate_cfg.pay_to,
+                     "resource": gate_cfg.resource},
+                    headers={"Cache-Control": "no-store"})
+
+            async def _pricing_html(request):
+                from starlette.responses import HTMLResponse
+                page = x402_gate.pricing_page(
+                    gate_cfg, title="mitracore — trust layer for agent work",
+                    what=("Verify the artifact, meter the cost, enforce the mandate — "
+                          "one call instead of three."),
+                    docs="https://rta.lat/mitracore/llms-install.md")
+                return HTMLResponse(page, headers={"Cache-Control": "no-store"})
+
+            async def _subscribe(request: Request):
+                status, body, extra = x402_gate.subscribe(
+                    gate_cfg, request.headers.get("x-payment")
+                    or request.headers.get("payment-signature") or "")
+                return JSONResponse(body, status_code=status, headers=extra)
+
+            for _p in ("/pricing.json", _prefix + "/pricing.json"):
+                app.router.routes.insert(0, Route(_p, _pricing))
+            for _p in ("/pricing", _prefix + "/pricing"):
+                app.router.routes.insert(0, Route(_p, _pricing_html))
+            for _p in ("/subscribe", _prefix + "/subscribe"):
+                app.router.routes.insert(0, Route(_p, _subscribe, methods=["POST"]))
+
         app.router.routes.insert(0, Route("/health", _health))
         app.router.routes.insert(0, Route("/", _health))
         # тот же health под префиксом туннеля (/mitracore/health, /skilllint/health)
         prefix = args.http_path.rsplit("/", 1)[0]
         if prefix and prefix != "":
             app.router.routes.insert(0, Route(prefix + "/health", _health))
+        # Гейт ставится последним: он оборачивает уже собранное приложение,
+        # и 402 решается до парсера MCP, а не внутри инструмента.
+        if gate_cfg is not None:
+            app = x402_gate.middleware(
+                gate_cfg, x402_gate.DailyQuota(gate_cfg.free_per_day))(app)
         uvicorn.run(app, host=args.host, port=port, log_level="warning")
     else:
         asyncio.run(mcp.run_stdio_async())

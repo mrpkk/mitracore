@@ -263,6 +263,31 @@ def main() -> None:
             # должен увидеть карточку сервера, а не 404.
             app.router.routes.insert(0, Route(prefix, _health))
             app.router.routes.insert(0, Route(prefix + "/health", _health))
+        # ── Agent Trust Suite: проверка действия и страница ─────────────
+        # Срез 1 из 24 проверок (SPEC 05.11.2026 §2–3). Гейт ниже эти пути
+        # не трогает: он платный только для POST …/mcp.
+        import agents_page
+        import trust_check
+
+        async def _trust_check(request):
+            body = await request.body()
+            try:
+                payload = json.loads(body) if body else {}
+            except ValueError:
+                payload = {}  # мусор в теле — не 500: все проверки скажут unknown
+            return JSONResponse(trust_check.check(payload),
+                                headers={"Cache-Control": "no-store"})
+
+        async def _agents_page(request):
+            from starlette.responses import HTMLResponse
+            return HTMLResponse(agents_page.PAGE,
+                                headers={"Cache-Control": "no-store"})
+
+        for _p in ("/api/trust/check", prefix + "/api/trust/check"):
+            app.router.routes.insert(0, Route(_p, _trust_check, methods=["POST"]))
+        for _p in ("/agents", prefix + "/agents"):
+            app.router.routes.insert(0, Route(_p, _agents_page))
+
         # Гейт ставится последним: он оборачивает уже собранное приложение,
         # и 402 решается до парсера MCP, а не внутри инструмента.
         if gate_cfg is not None:

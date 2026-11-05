@@ -20,6 +20,38 @@ python3 mcp_server.py --http 8192                  # streamable http
 
 Public endpoints: `POST https://rta.lat/mitracore/mcp` (JSON-RPC 2.0), plus `/v1/verify`, `/v1/quote`, `/v1/trust-report`, `/v1/skills/lint`, `/health`.
 
+## Guard a paying agent (before the call, not after)
+
+`guard/` sits in front of the agent and decides before the money moves: daily
+budget, per-call cap, payee and network allowlists, kill switch. Every decision —
+allow and deny — is an Ed25519-signed journal line, chained so a deleted record
+is visible.
+
+```bash
+cp guard/policy.example.json guard/policy.json    # budget, caps, allowlists
+python -m guard.proxy --policy guard/policy.json --amount 0.25 \
+  --payee 0x1111111111111111111111111111111111111111 --network base \
+  --cmd "<the call you are buying>"
+python -m guard.proxy --policy guard/policy.json --verify   # signatures + chain
+touch guard/KILL                                            # stop everything now
+```
+
+Exit codes: `0` allowed and the command ran, `2` denied (the command never ran,
+the refusal is in the journal), `3` journal does not verify.
+
+Python:
+
+```python
+from guard import Policy, authorize
+decision = authorize({"amount_usd": 0.25, "payee": "0x1111…", "network": "base"},
+                     Policy.load("guard/policy.json"))
+assert decision["decision"] == "allow"
+```
+
+The key is generated on first run at `guard/keys/guard.key` (0600), the public
+half sits next to it at `guard/keys/guard.pub`. Nothing is spent and nothing is
+sent anywhere: the decision is local.
+
 ## Tools
 
 `verify_work(artifact, schema?)` | `check_skill(path)` | `quote_cost(tokens, cpu_seconds, bytes_out, storage_writes, external_calls)` | `trust_report(artifact, schema?)` | `suite_status()`

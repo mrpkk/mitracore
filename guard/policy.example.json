@@ -1,0 +1,10 @@
+{
+  "agent_id": "demo-agent",
+  "daily_budget_usd": 5.0,
+  "max_per_call_usd": 1.0,
+  "payees": ["0x1111111111111111111111111111111111111111"],
+  "networks": ["base"],
+  "kill_switch": "KILL",
+  "ledger": "ledger.jsonl",
+  "keys": "keys"
+}

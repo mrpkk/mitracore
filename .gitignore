@@ -9,3 +9,10 @@ venv/
 data/
 *.log
 .env
+
+# guard: ключи, журнал и флаг остановки живут только на машине
+guard/keys/
+guard/ledger.jsonl
+guard/ledger.jsonl.lock
+guard/KILL
+guard/policy.json

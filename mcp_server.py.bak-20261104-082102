@@ -1,0 +1,274 @@
+#!/usr/bin/env python3
+"""MITRACORE — единый слой доверия для агентной работы.
+
+Отдельный продукт: НЕ меняет и НЕ перемещает attest, drift, agentpay, skilllint —
+он вызывает их по их же HTTP-контрактам и отдаёт один вердикт.
+
+Состав:
+  attest  — проверка артефакта (4 слоя: форма, пустота, provenance, право)
+  skilllint — приватная проверка скилла (структура, триггеры, инъекции, секреты)
+  agentpay — цена по фактическому расходу
+  drift   — мандаты и лимиты (доступен как отдельный MCP на :8095/mcp)
+
+Запуск:  python3 mcp_server.py            # stdio
+         python3 mcp_server.py --http 8192
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+try:  # установленный пакет (pip/uvx) — иначе соседний каталог
+    import skilllint  # noqa: F401
+except ImportError:  # pragma: no cover
+    sys.path.insert(0, os.path.join(HERE, "..", "skilllint"))
+
+from mcp.server.mcpserver import MCPServer  # noqa: E402
+import x402_gate  # noqa: E402  (цена и 402 после бесплатного лимита)
+
+mcp = MCPServer("mitracore", version="1.0.0")
+
+ATTEST = os.environ.get("ATTEST_URL", "http://127.0.0.1:8185")
+AGENTPAY = os.environ.get("AGENTPAY_URL", "http://127.0.0.1:8187")
+DRIFT = os.environ.get("DRIFT_URL", "http://127.0.0.1:8095")
+UA = "mitracore/1.0"
+
+
+def _post(url: str, payload: dict, timeout: int = 20) -> dict:
+    body = json.dumps(payload, ensure_ascii=False).encode()
+    req = urllib.request.Request(url, data=body, method="POST",
+                                 headers={"Content-Type": "application/json", "User-Agent": UA})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return {"ok": False, "error": f"HTTP {e.code}", "detail": e.read()[:300].decode("utf-8", "replace")}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    try:
+        return json.loads(raw)
+    except Exception:
+        return {"ok": True, "raw": raw[:4000]}
+
+
+def _get(url: str, timeout: int = 8) -> dict:
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read().decode("utf-8", "replace")
+        try:
+            return {"ok": True, "data": json.loads(raw)}
+        except Exception:
+            return {"ok": True, "raw": raw[:400]}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def _as_json(value: str | None, field: str) -> object:
+    if not value:
+        return None
+    try:
+        return json.loads(value)
+    except Exception as e:
+        raise ValueError(f"{field} не является JSON: {e}") from e
+
+
+@mcp.tool(name="verify_work", description="Проверить артефакт агента (4 слоя: схема, пустота, provenance, полномочия). Возвращает вердикт attest.")
+async def verify_work(artifact: str, schema: str = "") -> str:
+    art = _as_json(artifact, "artifact")
+    sch = _as_json(schema, "schema")
+    payload: dict = {"artifact": art}
+    if sch is not None:
+        payload["schema"] = sch
+    res = _post(f"{ATTEST}/verify", payload)
+    return json.dumps(res, ensure_ascii=False, default=str)
+
+
+@mcp.tool(name="check_skill", description="Приватно проверить SKILL.md: структура, триггеры, секреты, prompt-injection, битые ссылки. Возвращает вердикт, балл и sha256 (готово к подписи).")
+async def check_skill(path: str) -> str:
+    from skilllint.linter import lint_skill  # локальный импорт: путь уже в sys.path
+    rep = lint_skill(path)
+    out = rep.as_dict()
+    out["signature_ready"] = {"artifact": {"skill": out.get("skill", ""), "sha256": out.get("sha256", ""),
+                                          "score": out.get("score", 0), "verdict": out.get("verdict", "")},
+                              "hint": "передай этот artifact в verify_work — получишь подписанный вердикт"}
+    return json.dumps(out, ensure_ascii=False)
+
+
+@mcp.tool(name="quote_cost", description="Посчитать цену по фактическому расходу (токены, CPU, байты, записи, внешние вызовы) — вместо прайсовой таблицы.")
+async def quote_cost(tokens: float = 0, cpu_seconds: float = 0, bytes_out: float = 0,
+                     storage_writes: float = 0, external_calls: float = 0) -> str:
+    res = _post(f"{AGENTPAY}/quote", {"tokens": tokens, "cpu_seconds": cpu_seconds,
+                                      "bytes_out": bytes_out, "storage_writes": storage_writes,
+                                      "external_calls": external_calls})
+    return json.dumps(res, ensure_ascii=False, default=str)
+
+
+@mcp.tool(name="trust_report", description="Сводный вердикт по артефакту агента: проверка работы (attest) + цена по факту (agentpay) + доступность мандатов (drift).")
+async def trust_report(artifact: str, schema: str = "") -> str:
+    art = _as_json(artifact, "artifact")
+    sch = _as_json(schema, "schema")
+    payload: dict = {"artifact": art}
+    if sch is not None:
+        payload["schema"] = sch
+    attest = _post(f"{ATTEST}/verify", payload)
+    agentpay = _post(f"{AGENTPAY}/quote", {})
+    drift = _get(f"{DRIFT}/health")
+    return json.dumps({
+        "artifact_verdict": attest,
+        "cost_quote": agentpay,
+        "mandates_available": bool(drift.get("ok")),
+        "mandates_endpoint": f"{DRIFT}/mcp",
+        "layers": ["attest:verify", "agentpay:quote", "drift:mandates"],
+    }, ensure_ascii=False, default=str)
+
+
+@mcp.tool(name="suite_status", description="Живое состояние слоёв Suite: attest, agentpay, drift, skilllint.")
+async def suite_status() -> str:
+    from skilllint.linter import RULES
+    return json.dumps({
+        "attest": _get(f"{ATTEST}/health"),
+        "agentpay": _get(f"{AGENTPAY}/health"),
+        "drift": _get(f"{DRIFT}/health"),
+        "skilllint": {"ok": True, "rules": len(RULES)},
+    }, ensure_ascii=False, default=str)
+
+
+_PRIVACY = '# Privacy — mitracore\n\nmitracore answers one question about one input. Here is the whole data story.\n\n## What is stored\n\n- **Request counters** — how many calls, of which tool, per day. No content.\n- **The rate limiter** keeps your client address in memory for one hour to count\n  requests. It is not written to disk and disappears on restart.\n- **Errors** are logged without request bodies.\n\n## What is not stored\n\n- the artifact, the skill text, the prompt, the file name, the model output;\n- anything that identifies you personally;\n- IP addresses in persistent form.\n\n## Paid calls\n\nA payment receipt is a public on-chain fact. It carries the amount, the payer\naddress and the time — nothing about the content you verified.\n\n## Deletion and questions\n\nOpen an issue at https://github.com/mrpkk/mitracore/issues. There is no account to delete: the service does\nnot have users, only callers.\n'
+
+_LLMS_INSTALL = '# mitracore — install\n\nRemote MCP server (streamable HTTP). No key, no account.\n\n```json\n{"mcpServers": {"mitracore": {"url": "https://rta.lat/mitracore/mcp"}}}\n```\n\nTools: `verify_work` — проверка артефакта в 4 слоя, `check_skill` — приватная проверка SKILL.md, `quote_cost` — цена по фактическому расходу, `trust_report` — сводный вердикт, `suite_status` — состояние слоёв.\n\n20 проверок в сутки бесплатно, дальше 0.005 USDC за вызов.\n\nEndpoint: `https://rta.lat/mitracore/mcp` · Health: `https://rta.lat/mitracore/health` · Privacy: `https://rta.lat/mitracore/privacy` · Source: https://github.com/mrpkk/mitracore\n'
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--http", type=int, default=0)
+    ap.add_argument("--http-path", default="/mcp",
+                    help="путь MCP внутри HTTP-сервера (туннель не срезает префикс)")
+    ap.add_argument("--port", type=int, default=0, help="порт (перекрывает --http); $PORT — для PaaS")
+    ap.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"), help="bind-адрес (0.0.0.0 в контейнерах)")
+    args = ap.parse_args()
+    port = args.port or args.http or int(os.environ.get("PORT", "0") or 0)
+    if port:
+        # HTTP-режим через ASGI-приложение: так добавляется /health —
+        # Apify и внешние платформы проверяют стартовый URL, прежде чем считать акт живым.
+        from mcp.server.transport_security import TransportSecuritySettings
+        if os.environ.get("MCP_ALLOW_ANY_HOST") == "1":
+            security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+        else:
+            security = TransportSecuritySettings(
+                allowed_hosts=["127.0.0.1", "127.0.0.1:*", "localhost", "localhost:*",
+                               "rta.lat", "*.rta.lat", "rta.ailegal.legal", "*.ailegal.legal"],
+                allowed_origins=["http://127.0.0.1:%d % port", "http://localhost:%d % port",
+                                 "https://rta.lat", "https://*.rta.lat",
+                                 "https://rta.ailegal.legal", "https://*.ailegal.legal"],
+            )
+        import uvicorn
+        from starlette.responses import JSONResponse
+        from starlette.routing import Route
+
+        app = mcp.streamable_http_app(streamable_http_path=args.http_path,
+                                       transport_security=security)
+
+        async def _health(request):
+            return JSONResponse({"ok": True, "service": "mitracore",
+                                 "mcp_path": args.http_path})
+
+        from starlette.responses import PlainTextResponse
+
+        async def _privacy(request):
+            return PlainTextResponse(_PRIVACY, media_type="text/plain; charset=utf-8")
+
+        async def _llms(request):
+            return PlainTextResponse(_LLMS_INSTALL, media_type="text/plain; charset=utf-8")
+
+        _prefix = args.http_path.rsplit("/", 1)[0]
+        for _p in ("/privacy", _prefix + "/privacy"):
+            app.router.routes.insert(0, Route(_p, _privacy))
+        for _p in ("/llms-install.md", _prefix + "/llms-install.md"):
+            app.router.routes.insert(0, Route(_p, _llms))
+        async def _server_card(request):
+            # Статическая карточка для каталогов, где скан живого /mcp не
+            # проходит. Собирается из того же списка инструментов, что и
+            # tools/list, — расхождение с листингом невозможно.
+            tools = await mcp.list_tools()
+            card = {
+                "serverInfo": {"name": "mitracore", "version": "1.0.0"},
+                "authentication": {"required": False, "schemes": []},
+                "tools": [{"name": x.name, "description": x.description or "",
+                           # В новом SDK поле называется input_schema,
+                           # в старом — inputSchema.
+                           "inputSchema": getattr(x, "inputSchema", None)
+                           or getattr(x, "input_schema", None)
+                           or {"type": "object"}}
+                          for x in tools],
+                "resources": [],
+                "prompts": [],
+            }
+            return JSONResponse(card)
+
+        _prefix = args.http_path.rsplit("/", 1)[0]
+        for _p in ("/.well-known/mcp/server-card.json", _prefix + "/.well-known/mcp/server-card.json"):
+            app.router.routes.insert(0, Route(_p, _server_card))
+        # ── цена и оплата ───────────────────────────────────────────────
+        # Бесплатный лимит в день, дальше 402 по x402. Адрес страницы цены
+        # уходит в server.json (websiteUrl): без него каталоги не показывают
+        # цену вовсе — они читают её с сайта, а не из нашего ответа.
+        gate_cfg = x402_gate.config("mitracore", f"https://rta.lat{args.http_path}")
+        if gate_cfg is not None:
+            from starlette.requests import Request
+
+            async def _pricing(request):
+                return JSONResponse(
+                    {"service": "mitracore", "price_usd": gate_cfg.price_usd,
+                     "free_per_day": gate_cfg.free_per_day,
+                     "subscription_usd": gate_cfg.sub_price_usd,
+                     "subscription_period_days": 30,
+                     "network": gate_cfg.network, "pay_to": gate_cfg.pay_to,
+                     "resource": gate_cfg.resource},
+                    headers={"Cache-Control": "no-store"})
+
+            async def _pricing_html(request):
+                from starlette.responses import HTMLResponse
+                page = x402_gate.pricing_page(
+                    gate_cfg, title="mitracore — trust layer for agent work",
+                    what=("Verify the artifact, meter the cost, enforce the mandate — "
+                          "one call instead of three."),
+                    docs="https://rta.lat/mitracore/llms-install.md")
+                return HTMLResponse(page, headers={"Cache-Control": "no-store"})
+
+            async def _subscribe(request: Request):
+                status, body, extra = x402_gate.subscribe(
+                    gate_cfg, request.headers.get("x-payment")
+                    or request.headers.get("payment-signature") or "")
+                return JSONResponse(body, status_code=status, headers=extra)
+
+            for _p in ("/pricing.json", _prefix + "/pricing.json"):
+                app.router.routes.insert(0, Route(_p, _pricing))
+            for _p in ("/pricing", _prefix + "/pricing"):
+                app.router.routes.insert(0, Route(_p, _pricing_html))
+            for _p in ("/subscribe", _prefix + "/subscribe"):
+                app.router.routes.insert(0, Route(_p, _subscribe, methods=["POST"]))
+
+        app.router.routes.insert(0, Route("/health", _health))
+        app.router.routes.insert(0, Route("/", _health))
+        # тот же health под префиксом туннеля (/mitracore/health, /skilllint/health)
+        prefix = args.http_path.rsplit("/", 1)[0]
+        if prefix and prefix != "":
+            app.router.routes.insert(0, Route(prefix + "/health", _health))
+        # Гейт ставится последним: он оборачивает уже собранное приложение,
+        # и 402 решается до парсера MCP, а не внутри инструмента.
+        if gate_cfg is not None:
+            app = x402_gate.middleware(
+                gate_cfg, x402_gate.DailyQuota(gate_cfg.free_per_day))(app)
+        uvicorn.run(app, host=args.host, port=port, log_level="warning")
+    else:
+        asyncio.run(mcp.run_stdio_async())
+
+
+if __name__ == "__main__":
+    main()

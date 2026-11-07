@@ -4,7 +4,8 @@
         --payee 0x1111111111111111111111111111111111111111 --network base \
         --cmd "curl -s https://example/a"
 
-allow  → команда запускается, запись в журнале, код возврата команды;
+allow  → команда запускается без shell (shlex.split), запись в журнале, код возврата;
+         пайпы и редиректы намеренно не поддерживаются: shell=True дал бы инъекцию;
 deny   → команда НЕ запускается, подписанный отказ в журнале, код 2;
 битая политика → код 2 и ни одного запуска;
 --verify → только проверка журнала подписью, код 0 (сходится) или 3 (нет).
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import subprocess
 import sys
 
@@ -70,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if result["decision"] != "allow":
         return 2
-    return subprocess.run(args.cmd, shell=True).returncode
+    return subprocess.run(shlex.split(args.cmd), check=False).returncode
 
 
 if __name__ == "__main__":

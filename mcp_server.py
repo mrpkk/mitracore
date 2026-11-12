@@ -30,7 +30,14 @@ except ImportError:  # pragma: no cover
     sys.path.insert(0, os.path.join(HERE, "..", "skilllint"))
 
 from mcp.server.mcpserver import MCPServer  # noqa: E402
+from mcp.types import ToolAnnotations  # noqa: E402
 import x402_gate  # noqa: E402  (цена и 402 после бесплатного лимита)
+
+# Описания и аннотации — на английском и с readOnlyHint: каталоги (Glama,
+# mcpservers.org, официальный реестр MCP) показывают аннотации бейджем
+# «read-only» и отсеивают серверы без них.
+_READONLY = dict(read_only_hint=True, destructive_hint=False,
+                 idempotent_hint=True, open_world_hint=False)
 
 mcp = MCPServer("mitracore", version="1.0.0")
 
@@ -79,7 +86,13 @@ def _as_json(value: str | None, field: str) -> object:
         raise ValueError(f"{field} не является JSON: {e}") from e
 
 
-@mcp.tool(name="verify_work", description="Проверить артефакт агента (4 слоя: схема, пустота, provenance, полномочия). Возвращает вердикт attest.")
+@mcp.tool(
+    name="verify_work",
+    title="Verify agent work",
+    description=("Verify an AI agent artifact in four layers: schema, emptiness, "
+                 "provenance and mandate authority. Returns an attest verdict."),
+    annotations=ToolAnnotations(title="Verify agent work", **_READONLY),
+)
 async def verify_work(artifact: str, schema: str = "") -> str:
     art = _as_json(artifact, "artifact")
     sch = _as_json(schema, "schema")
@@ -90,7 +103,14 @@ async def verify_work(artifact: str, schema: str = "") -> str:
     return json.dumps(res, ensure_ascii=False, default=str)
 
 
-@mcp.tool(name="check_skill", description="Приватно проверить SKILL.md: структура, триггеры, секреты, prompt-injection, битые ссылки. Возвращает вердикт, балл и sha256 (готово к подписи).")
+@mcp.tool(
+    name="check_skill",
+    title="Vet an agent skill",
+    description=("Privately vet a SKILL.md: structure, triggers, leaked secrets, "
+                 "prompt-injection markers and broken links. Returns a verdict, a score "
+                 "and a sha256 ready to be signed."),
+    annotations=ToolAnnotations(title="Vet an agent skill", **_READONLY),
+)
 async def check_skill(path: str) -> str:
     from skilllint.linter import lint_skill  # локальный импорт: путь уже в sys.path
     rep = lint_skill(path)
@@ -101,7 +121,13 @@ async def check_skill(path: str) -> str:
     return json.dumps(out, ensure_ascii=False)
 
 
-@mcp.tool(name="quote_cost", description="Посчитать цену по фактическому расходу (токены, CPU, байты, записи, внешние вызовы) — вместо прайсовой таблицы.")
+@mcp.tool(
+    name="quote_cost",
+    title="Quote cost from usage",
+    description=("Compute the price from measured usage — tokens, CPU seconds, bytes, "
+                 "storage writes and external calls — instead of a flat price table."),
+    annotations=ToolAnnotations(title="Quote cost from usage", **_READONLY),
+)
 async def quote_cost(tokens: float = 0, cpu_seconds: float = 0, bytes_out: float = 0,
                      storage_writes: float = 0, external_calls: float = 0) -> str:
     res = _post(f"{AGENTPAY}/quote", {"tokens": tokens, "cpu_seconds": cpu_seconds,
@@ -110,7 +136,13 @@ async def quote_cost(tokens: float = 0, cpu_seconds: float = 0, bytes_out: float
     return json.dumps(res, ensure_ascii=False, default=str)
 
 
-@mcp.tool(name="trust_report", description="Сводный вердикт по артефакту агента: проверка работы (attest) + цена по факту (agentpay) + доступность мандатов (drift).")
+@mcp.tool(
+    name="trust_report",
+    title="Trust report for an artifact",
+    description=("One verdict for an AI agent artifact: work verification (attest) + "
+                 "price from measured usage (agentpay) + mandate availability (drift)."),
+    annotations=ToolAnnotations(title="Trust report for an artifact", **_READONLY),
+)
 async def trust_report(artifact: str, schema: str = "") -> str:
     art = _as_json(artifact, "artifact")
     sch = _as_json(schema, "schema")
@@ -129,7 +161,12 @@ async def trust_report(artifact: str, schema: str = "") -> str:
     }, ensure_ascii=False, default=str)
 
 
-@mcp.tool(name="suite_status", description="Живое состояние слоёв Suite: attest, agentpay, drift, skilllint.")
+@mcp.tool(
+    name="suite_status",
+    title="Suite status",
+    description="Live status of the Suite layers: attest, agentpay, drift, skilllint.",
+    annotations=ToolAnnotations(title="Suite status", **_READONLY),
+)
 async def suite_status() -> str:
     from skilllint.linter import RULES
     return json.dumps({
@@ -199,7 +236,11 @@ def main() -> None:
             card = {
                 "serverInfo": {"name": "mitracore", "version": "1.0.0"},
                 "authentication": {"required": False, "schemes": []},
-                "tools": [{"name": x.name, "description": x.description or "",
+                "tools": [{"name": x.name,
+                           "title": getattr(x, "title", None) or x.name,
+                           "description": x.description or "",
+                           "annotations": (x.annotations.model_dump(by_alias=True, exclude_none=True)
+                                           if getattr(x, "annotations", None) else None),
                            # В новом SDK поле называется input_schema,
                            # в старом — inputSchema.
                            "inputSchema": getattr(x, "inputSchema", None)
